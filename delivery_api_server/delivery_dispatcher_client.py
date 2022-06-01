@@ -1,18 +1,6 @@
+from logging import raiseExceptions
 
-# Copyright 2021 Open Source Robotics Foundation, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+from flask import request, request_started
 import rclpy
 import time
 import json
@@ -34,10 +22,32 @@ from rmf_task_msgs.msg import ApiRequest, ApiResponse
 from rmf_building_map_msgs.srv import GetBuildingMap
 from rmf_fleet_msgs.msg import FleetState, RobotMode
 
+# Info for delivery
+from delivery_api_server.info import BuildingData, Operation
+
+# This was derived from: https://github.com/open-rmf/rmf_demos/blob/main/rmf_demos_panel/rmf_demos_panel/simple_api_server.py
+
+# Which uses the following licence:
+"""
+    Copyright 2021 Open Source Robotics Foundation, Inc.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+"""
+
 ###############################################################################
 
 
-class DispatcherClient(Node):
+class DeliveryDispatcherClient(Node):
     def __init__(self):
         super().__init__('simple_api_server')
         api_req_qos_profile = QoSProfile(
@@ -71,6 +81,9 @@ class DispatcherClient(Node):
 
     def ros_time(self) -> int:
         return self.get_clock().now().seconds_nanoseconds()[0]
+
+# Request
+###############################################################################
 
     def submit_task_request(self, req_json) -> Tuple[str, str]:
         """
@@ -122,6 +135,66 @@ class DispatcherClient(Node):
         #   cancellation is not fully tested in "rmf_ros2"
         return False
 
+    # dispatch a delivery order request to internal robot
+    def dispatch_order(self, req_json) -> Tuple[str, str]:
+        # request_json below refers to the a rmf task_api_request which may not be necessary in our case
+        self.get_logger().info("dispatching")
+        self.get_logger().info(f"request: {req_json}")
+        request_json, err_msg = self.__convert_delivery_order_request(req_json)
+        if request_json is None:
+            self.get_logger().info(f"request json is empty! :(")
+            return "", err_msg
+        self.get_logger().info("message converted")
+        # submit a delivery order request
+        msg = ApiRequest()
+        msg.request_id = req_json["order"]["company_name"] + "_hub_delivery_" + str(uuid.uuid4())
+        payload = {}
+        # TODO: set payload["type"] tp ne "dispatch_task_request" if there is
+        # more than one robot
+        payload["type"] = "robot_task_request"
+        payload["fleet"] = BuildingData.internal_fleet_name
+        payload["robot"] = BuildingData.internal_robot
+        payload["request"] = request_json
+        msg.json_msg = json.dumps(payload)
+        self.task_api_req_pub.publish(msg)
+        self.get_logger().info("message published")
+        return msg, ""
+
+    def receive_robot(self, req_json):
+        # send a command to the fleet adapter to accept the robot into the
+        # fleet and send a task to collect it from the hub
+        request_json, err_msg = self.__convert_receive_robot_request(req_json)
+        if request_json is None:
+                return "", err_msg
+        msg = ApiRequest()
+        msg.request_id = req_json["order"]["company_name"] + "_hub_delivery_" + str(uuid.uuid4())
+        payload = {}
+        payload["type"] = "robot_task_request"
+        payload["fleet"] = BuildingData.external_fleet_name
+        # TODO: Check if building name is equal
+        ingress_wp = req_json['ingress_point']['waypoint']
+        # TODO: accept robot into fleet
+
+        payload["robot"] = req_json["robot"]["id"]
+        payload["type"] = "dispatch_task_request"
+        payload["request"] = request_json
+        msg.json_msg = json.dumps(payload)
+        self.task_api_req_pub.publish(msg)
+        return msg, ""
+
+        # TODO need to find a way to asynchronously wait for the robot to
+        # reach the egress point to inform the system server.
+
+        # IDEA:
+        # We can call a rosservice when the robot leaves the fleet.
+        # This API Server will be responding to the service request
+        # Notifies the System server once the it receives the ROS Service
+        # call.
+
+
+# Getters
+###############################################################################
+
     def get_task_status(self):
         """
         Get all task status - This fn will trigger a ros srv call to acquire
@@ -162,6 +235,9 @@ class DispatcherClient(Node):
                 'Error! GetBuildingMap Srv failed %r' % (e,))
         return {}  # empty dict
 
+# Setters
+###############################################################################
+
     def set_task_state(self, json_obj):
         """
         set and store the latest task_state.
@@ -170,6 +246,16 @@ class DispatcherClient(Node):
         id = state["task_id"]
         self.task_states_cache[id] = state
 
+    def set_delivery_task_state(self, json_obj):
+        """
+        send the order status to the system server.
+        we may want to do this instead of waiting for the
+        system server to send a get request.
+        """
+        status = {}
+        return status
+
+# converters
 ###############################################################################
 
     def __convert_task_state_msg(self, json_obj):
@@ -266,11 +352,99 @@ class DispatcherClient(Node):
             state["assignments"] = self.__get_robot_assignment(bot.name)
             bots.append(state)
         return bots
-    def __convert_delivery_order_description(self, task_json):
-        request = {
-            "company_name" : {"name" : "name"}
-            "order" : {"id" : "id", "status", "status"}
-        }
+
+    ## convert delivery order request into a task request
+    def __convert_delivery_order_request(self, order_json):
+        self.get_logger().info("attempting to convert request")
+        if (("order" not in order_json) or
+            ("id" not in  order_json["order"]) or
+            ("unit" not in order_json) or
+            ("operation" not in order_json)):
+            self.get_logger().info("order request is not complete")
+            raise Exception("Key value is incomplete")
+
+        else:
+            self.get_logger().info("request is filled!")
+            request =  {}
+            start_time_sec = 0
+            now = self.get_clock().now().to_msg()
+            now.sec =  now.sec + start_time_sec
+            start_time = now.sec * 1000 + round(now.nanosec/10**6)
+            request["unix_millis_earliest_start_time"] = start_time
+            request["category"] = "compose"
+            description = {} # task_description_Compose.json
+            description["category"] = "hub_delivery"
+            description["phases"] = []
+            activities = []
+            # deposit to hub
+            if (order_json["operation"]["task"] == Operation.HUB_DEPOSIT.value):
+                self.get_logger().info(f"Operation: {Operation.HUB_DEPOSIT}")
+                activities.append({"category": "go_to_place",  "description": order_json["unit"]["unit"]})
+                collection_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "store_collect", "description": {}}}
+                activities.append(collection_activity)
+
+                activities.append({"category": "go_to_place",  "description": BuildingData.hub})
+                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_deposit", "description": {"id": order_json["order"]["id"]}}}
+                activities.append(hub_activity)
+
+                activities.append({"category": "go_to_place",  "description": BuildingData.holding_point})
+                description["phases"].append({"activity":{"category": "sequence", "description":{"activities":activities}}})
+                request["description"] = description
+
+
+            # collect from hub
+            elif (order_json["operation"]["task"] == Operation.HUB_COLLECT.value):
+                self.get_logger().info(f"Operation: {Operation.HUB_COLLECT}")
+                activities.append({"category": "go_to_place",  "description": BuildingData.hub})
+                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_collect", "description": {"id": order_json["order"]["id"]}}}
+                activities.append(hub_activity)
+
+                activities.append({"category": "go_to_place",  "description": order_json["unit"]["unit"]})
+                unit_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "store_deposit", "description": {}}}
+                activities.append(unit_activity)
+
+                activities.append({"category": "go_to_place",  "description": BuildingData.holding_point})
+                description["phases"].append({"activity":{"category": "sequence", "description":{"activities":activities}}})
+                request["description"] = description
+            self.get_logger().info(f"rmf task request: {request}")
+            return request, ""
+
+    def __convert_receive_robot_request(self, receive_robot_json):
+        if (("robot" not in receive_robot_json) or
+            ("ingress_point" not in  receive_robot_json) or
+            ("egress_point" not in receive_robot_json) or
+            ("unit" not in receive_robot_json) or
+            ("order" not in receive_robot_json) or
+            ("operation" not in receive_robot_json)):
+            raise Exception("Key value is incomplete")
+        else:
+            request = {}
+            start_time = 0
+            now = self.get_clock().now().to_msg()
+            now.sec =  now.sec + start_time
+            start_time = now.sec * 1000 + round(now.nanosec/10**6)
+            request["unix_millis_earliest_start_time"] = start_time
+            request["category"] = "compose"
+            description = {} # task_description_Compose.json
+            description["category"] = "hub_delivery"
+            description["phases"] = []
+            activities = []
+            activities.append({"category": "go_to_place",  "description": BuildingData.hub})
+
+            if (receive_robot_json["operation"]["task"] == Operation.HUB_COLLECT.value):
+                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_collect", "description": {"id": receive_robot_json["order"]["id"]}}}
+                activities.append(hub_activity)
+
+
+            elif (receive_robot_json["operation"]["task"] == Operation.HUB_DEPOSIT.value):
+                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_deposit", "description": {"id": receive_robot_json["order"]["id"]}}}
+                activities.append(hub_activity)
+
+            activities.append({"category": "go_to_place",  "description": receive_robot_json["egress_point"]["unit"]})
+            description["phases"].append({"activity":{"category": "sequence", "description":{"activities":activities}}})
+            request["description"] = description
+            return request
+
     def __convert_task_description(self, task_json):
         """
         Convert a json task req format to legacy dashboard json msg format

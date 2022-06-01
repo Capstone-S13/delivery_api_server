@@ -1,21 +1,7 @@
-# Copyright 2020 Open Source Robotics Foundation, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 
 """
 The main API Interfaces (default port 8083):
-1) HTTP interfaces are:  /submit_task, /cancel_task, /task_list, /robot_list
+1) HTTP interfaces are:  /order /receive-robot, /cancel_task
 2) socketIO broadcast states: /task_status, /robot_states, /ros_time
 """
 
@@ -26,6 +12,8 @@ import argparse
 import time
 import json
 import logging
+import requests
+from http import HTTPStatus
 from threading import Thread
 
 from flask import Flask, request, jsonify
@@ -33,8 +21,28 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit, disconnect
 import asyncio
 
-from rmf_demos_panel.dispatcher_client import DispatcherClient
-from rmf_demos_panel.rmf_msg_observer import AsyncRmfMsgObserver, RmfMsgType
+from delivery_api_server.info import DeliveryAPIServerData, SystemServerData
+from delivery_api_server.delivery_dispatcher_client import DeliveryDispatcherClient
+from delivery_api_server.rmf_msg_observer import AsyncRmfMsgObserver, RmfMsgType
+
+# This was derived from: https://github.com/open-rmf/rmf_demos/blob/main/rmf_demos_panel/rmf_demos_panel/simple_api_server.py
+
+# Which uses the following licence:
+"""
+    Copyright 2020 Open Source Robotics Foundation, Inc.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+"""
 
 ###############################################################################
 
@@ -46,7 +54,7 @@ socketio = SocketIO(app, async_mode='threading')
 socketio.init_app(app, cors_allowed_origins="*")
 
 rclpy.init(args=None)
-dispatcher_client = DispatcherClient()
+dispatcher_client = DeliveryDispatcherClient()
 
 # logging config
 logging.getLogger('werkzeug').setLevel(logging.ERROR)  # hide logs from flask
@@ -62,6 +70,28 @@ dashboard_config = {"world_name": "EMPTY_DASHBOARD_CONFIG",
                     }
 
 ###############################################################################
+
+@app.route('/order', methods=['POST', 'GET'])
+def handle_order():
+    # Dispatch robot to collect parcel
+    logging.debug("order received")
+    print("order received")
+    if request.method == "POST":
+        dispatcher_client.dispatch_order(request.json)
+    # Retrieve order status and return it
+    elif request.method == "GET":
+        if request.args.get('order') is None:
+            logging.debug("No order in get request")
+            return HTTPStatus.BAD_REQUEST
+        order = request.args.get('order')
+        print(f"order is {order}")
+        # get status or order
+
+@app.route('/receive-robot', methods=['POST'])
+def receive_robot():
+    print("receive robot request")
+    receive_status = dispatcher_client.receive_robot(request.json)
+    # command rmf fleet adapter to accept robot into fleet and dispatch a task
 
 
 @app.route('/submit_task', methods=['POST'])
@@ -120,7 +150,10 @@ def web_server_spin():
         dispatcher_client.spin_once()
         time.sleep(0.2)
 
-
+# not required to broadcast everything. Perhaps we would want consider process
+# the task status and send a patch request of the delivery status and robot
+# status periodically so the system server would not have to send a get
+# request.
 def broadcast_states():
     """
     Robot_states, tasks_status, and ros_time are being broadcasted
@@ -161,21 +194,21 @@ def rmf_state_listener(port_num: str, done_fut: asyncio.Future):
 
 
 def main(args=None):
-    server_ip = "0.0.0.0"
-    port_num = 8083
-    ws_port_num = 7878
+    server_ip = DeliveryAPIServerData.server_ip
+    port_num = DeliveryAPIServerData.port_num
+    ws_port_num = DeliveryAPIServerData.ws_port_num
 
-    if "RMF_DEMOS_API_SERVER_IP" in os.environ:
-        server_ip = os.environ['RMF_DEMOS_API_SERVER_IP']
+    if "DELIVERY_API_SERVER_IP" in os.environ:
+        server_ip = os.environ['DELIVERY_API_SERVER_IP']
         print(f"Set Server IP to: {server_ip}")
 
-    if "RMF_DEMOS_API_SERVER_PORT" in os.environ:
-        port_num = int(os.environ['RMF_DEMOS_API_SERVER_PORT'])
+    if "DELIVERY_API_SERVER_PORT" in os.environ:
+        port_num = int(os.environ['DELIVERY_API_SERVER_PORT'])
         print(f"Set Server port to: {server_ip}:{port_num}")
 
-    if "RMF_WS_SERVER_PORT" in os.environ:
+    if "DELIVERY_WS_SERVER_PORT" in os.environ:
         ws_port_num = int(os.environ['RMF_WS_SERVER_PORT'])
-        print(f"Set RMF Websocket port to: localhost:{ws_port_num}")
+        print(f"Set DELIVERY Websocket port to: localhost:{ws_port_num}")
 
     if "DASHBOARD_CONFIG_PATH" in os.environ:
         config_path = os.environ['DASHBOARD_CONFIG_PATH']
@@ -201,18 +234,18 @@ def main(args=None):
     broadcast_thread = Thread(target=broadcast_states, args=())
     broadcast_thread.start()
 
-    done_fut = asyncio.Future()
-    listener_thread = Thread(
-        target=rmf_state_listener, args=(ws_port_num, done_fut))
-    listener_thread.start()
+    # done_fut = asyncio.Future()
+    # listener_thread = Thread(
+    #     target=rmf_state_listener, args=(ws_port_num, done_fut))
+    # listener_thread.start()
 
-    print(f"Starting RMF_Demos API Server: {server_ip}:{port_num}, "
+    print(f"Starting DELIVERY API Server: {server_ip}:{port_num}, "
           f"with ws://localhost:{ws_port_num}")
-    app.run(host=server_ip, port=port_num, debug=False)
+    app.run(host=server_ip, port=port_num, debug=True)
     dispatcher_client.destroy_node()
     rclpy.shutdown()
     print("shutting down...")
-    done_fut.set_result(True)  # shutdown listner
+    # done_fut.set_result(True)  # shutdown listner
 
 
 if __name__ == "__main__":
