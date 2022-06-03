@@ -380,32 +380,59 @@ class DeliveryDispatcherClient(Node):
             if (order_json["operation"]["task"] == Operation.HUB_DEPOSIT.value):
                 self.get_logger().info(f"Operation: {Operation.HUB_DEPOSIT}")
                 activities.append({"category": "go_to_place",  "description": order_json["unit"]["unit"]})
-                collection_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "store_collect", "description": {}}}
+                collection_activity = {"category": "perform_action",
+                "description": {"unix_millis_action_duration_estimate": 60000,
+                "category": "unit_collect",
+                "description": {"id": order_json["order"]["id"],
+                    "company_name": order_json["order"]["company_name"],
+                    "description":
+                        "" if ("description" not in order_json["order"])
+                        else order_json["order"]["description"]}}}
                 activities.append(collection_activity)
 
                 activities.append({"category": "go_to_place",  "description": BuildingData.hub})
-                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_deposit", "description": {"id": order_json["order"]["id"]}}}
+                hub_activity = {"category": "perform_action",  "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "hub_deposit",
+                    "description": {"id": order_json["order"]["id"],
+                        "company_name": order_json["order"]["company_name"],
+                        "description":
+                            "" if ("description" not in order_json["order"])
+                            else order_json["order"]["description"]}}}
                 activities.append(hub_activity)
-
-                activities.append({"category": "go_to_place",  "description": BuildingData.holding_point})
-                description["phases"].append({"activity":{"category": "sequence", "description":{"activities":activities}}})
-                request["description"] = description
 
 
             # collect from hub
             elif (order_json["operation"]["task"] == Operation.HUB_COLLECT.value):
                 self.get_logger().info(f"Operation: {Operation.HUB_COLLECT}")
                 activities.append({"category": "go_to_place",  "description": BuildingData.hub})
-                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_collect", "description": {"id": order_json["order"]["id"]}}}
+                hub_activity = {"category": "perform_action",  "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "hub_collect",
+                    "description": {"id": order_json["order"]["id"],
+                        "company_name": order_json["order"]["company_name"],
+                        "description":
+                            "" if ("description" not in order_json["order"])
+                            else order_json["order"]["description"]}}}
                 activities.append(hub_activity)
 
-                activities.append({"category": "go_to_place",  "description": order_json["unit"]["unit"]})
-                unit_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "store_deposit", "description": {}}}
+                activities.append({"category": "go_to_place",
+                    "description": order_json["unit"]["unit"]})
+                unit_activity = {"category": "perform_action", "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "unit_deposit",
+                    "description": {"id": order_json["order"]["id"],
+                        "company_name": order_json["order"]["company_name"],
+                        "description":
+                            "" if ("description" not in order_json["order"])
+                            else order_json["order"]["description"]}}}
                 activities.append(unit_activity)
 
-                activities.append({"category": "go_to_place",  "description": BuildingData.holding_point})
-                description["phases"].append({"activity":{"category": "sequence", "description":{"activities":activities}}})
-                request["description"] = description
+            activities.append({"category": "go_to_place",  "description": BuildingData.holding_point})
+            description["phases"].append({"activity":{"category": "sequence",
+                "description":{"activities":activities}}})
+            request["description"] = description
+
             self.get_logger().info(f"rmf task request: {request}")
             return request, ""
 
@@ -432,16 +459,24 @@ class DeliveryDispatcherClient(Node):
             activities.append({"category": "go_to_place",  "description": BuildingData.hub})
 
             if (receive_robot_json["operation"]["task"] == Operation.HUB_COLLECT.value):
-                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_collect", "description": {"id": receive_robot_json["order"]["id"]}}}
+                hub_activity = {"category": "perform_action",  "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "hub_collect",
+                    "description": {"id": receive_robot_json["order"]["id"]}}}
                 activities.append(hub_activity)
 
 
             elif (receive_robot_json["operation"]["task"] == Operation.HUB_DEPOSIT.value):
-                hub_activity = {"category": "perform_action",  "description": {"unix_millis_action_duration_estimate": 60000, "category": "hub_deposit", "description": {"id": receive_robot_json["order"]["id"]}}}
+                hub_activity = {"category": "perform_action",  "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "hub_deposit",
+                    "description": {"id": receive_robot_json["order"]["id"]}}}
                 activities.append(hub_activity)
 
-            activities.append({"category": "go_to_place",  "description": receive_robot_json["egress_point"]["unit"]})
-            description["phases"].append({"activity":{"category": "sequence", "description":{"activities":activities}}})
+            activities.append({"category": "go_to_place",
+                "description": receive_robot_json["egress_point"]["unit"]})
+            description["phases"].append({"activity":{"category": "sequence",
+                "description":{"activities":activities}}})
             request["description"] = description
             return request
 

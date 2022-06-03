@@ -9,7 +9,8 @@ def main():
                         "order":
                             {
                                 "company_name": "barg",
-                                "id": "barg" + str(uuid.uuid4())
+                                "id": "barg" + str(uuid.uuid4()),
+                                "description" : "a small item"
                             },
 
                         "unit":
