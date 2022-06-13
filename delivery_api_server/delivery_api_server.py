@@ -77,7 +77,10 @@ def handle_order():
     logging.debug("order received")
     print("order received")
     if request.method == "POST":
-        dispatcher_client.dispatch_order(request.json)
+        msg, err_msg = dispatcher_client.dispatch_order(request.json)
+        if (msg == ""):
+            return app.response_class(status = HTTPStatus.BAD_REQUEST.value)
+        return app.response_class(status=HTTPStatus.OK.value)
     # Retrieve order status and return it
     elif request.method == "GET":
         if request.args.get('order') is None:
