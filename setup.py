@@ -32,8 +32,7 @@ setup(
             'dispatch_internal_hub_deposit=delivery_api_server.dispatch_internal_hub_deposit:main',
             'dispatch_external_hub_collect=delivery_api_server.dispatch_external_hub_collect:main',
             'dispatch_external_hub_deposit=delivery_api_server.dispatch_external_hub_deposit:main',
-            'test_post_order=delivery_api_server.test_post_order:main',
-            'test_get_order=delivery_api_server.test_get_order:main'
+            'post_order_test=delivery_api_server.post_order_test:test_post',
         ],
     },
 )
