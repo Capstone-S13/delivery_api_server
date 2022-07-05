@@ -21,7 +21,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit, disconnect
 import asyncio
 
-from delivery_api_server.info import DeliveryAPIServerData, SystemServerData
+from delivery_api_server.info import BuildingData, DeliveryAPIServerData, SystemServerData
 from delivery_api_server.delivery_dispatcher_client import DeliveryDispatcherClient
 from delivery_api_server.rmf_msg_observer import AsyncRmfMsgObserver, RmfMsgType
 
@@ -177,13 +177,28 @@ def broadcast_states():
                           f" | active robots: {len(robots)}")
         time.sleep(2)
 
+def fleet_filter(json_data):
+    if (json_data["assigned_to"]["group"] != BuildingData.internal_fleet_name
+        or  json_data["assigned_to"]["name"] != BuildingData.internal_robot):
+        dispatcher_client.get_logger().info("not our robot!")
+        return None
+    return json_data
+
+def update_order_status(data):
+    status = data["status"]
+    url = f"{SystemServerData.server_ip}:{SystemServerData.port_num}/\
+        {SystemServerData.order_status_route}"
+
+    requests.post(data=status, url=url)
 
 def rmf_state_listener(port_num: str, done_fut: asyncio.Future):
     def msg_callback(msg_type, data):
         dispatcher_client.set_task_state(data)
-        # data["phases"] = {}
-        # print(f" \nReceived [{msg_type}] :: Data: \n   "
-        #     f"{data}")
+        data["phases"] = {}
+        dispatcher_client.get_logger()\
+            .info(f" \nReceived [{msg_type}] :: Data: \n   "
+            f"{data}")
+        data = fleet_filter(data)
 
     observer = AsyncRmfMsgObserver(
         msg_callback,
@@ -237,14 +252,15 @@ def main(args=None):
     broadcast_thread = Thread(target=broadcast_states, args=())
     broadcast_thread.start()
 
-    # done_fut = asyncio.Future()
-    # listener_thread = Thread(
-    #     target=rmf_state_listener, args=(ws_port_num, done_fut))
-    # listener_thread.start()
+    print("starting rmf listener")
+    done_fut = asyncio.Future()
+    listener_thread = Thread(
+        target=rmf_state_listener, args=(ws_port_num, done_fut))
+    listener_thread.start()
 
     print(f"Starting DELIVERY API Server: {server_ip}:{port_num}, "
           f"with ws://localhost:{ws_port_num}")
-    app.run(host=server_ip, port=port_num, debug=True)
+    app.run(host=server_ip, port=port_num, debug=True, use_reloader=False)
     dispatcher_client.destroy_node()
     rclpy.shutdown()
     print("shutting down...")
