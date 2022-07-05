@@ -462,7 +462,8 @@ class DeliveryDispatcherClient(Node):
                 hub_activity = {"category": "perform_action",  "description": {
                     "unix_millis_action_duration_estimate": 60000,
                     "category": "hub_collect",
-                    "description": {"id": receive_robot_json["order"]["id"]}}}
+                    "description": {"id": receive_robot_json["order"]["id"],
+                                    "company":receive_robot_json["order"]["company_name"]}}}
                 activities.append(hub_activity)
 
 
@@ -470,7 +471,8 @@ class DeliveryDispatcherClient(Node):
                 hub_activity = {"category": "perform_action",  "description": {
                     "unix_millis_action_duration_estimate": 60000,
                     "category": "hub_deposit",
-                    "description": {"id": receive_robot_json["order"]["id"]}}}
+                    "description": {"id": receive_robot_json["order"]["id"],
+                                    "company":receive_robot_json["order"]["company_name"]}}}
                 activities.append(hub_activity)
 
             activities.append({"category": "go_to_place",
