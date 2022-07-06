@@ -11,14 +11,31 @@ from dataclasses import dataclass, field
 from typing import List
 from enum import Enum
 
+class SystemOrderStatus(Enum):
+    ORDER_SENT = 0
+    ORDER_RECEIVED = 1
+    ROBOT_DISPATCHED = 2
+    AT_STORE_HUB = 3
+    BETWEEN_HUBS = 4
+    AT_DEST_HUB = 5
+    ARRIVED = 6
+    DELIVERED = 7
+    CANCELLED = 8
+    FAILED = 9
+
+
 class Operation(Enum):
     HUB_COLLECT = 0
     HUB_DEPOSIT = 1
 
+
 @dataclass
 class SystemServerData:
-    server_ip: str = ""
-    port_num: str = ""
+    server_ip: str = "localhost"
+    port_num: str = "8888"
+
+    # routings
+    order_status_route: str = "order-status"
 
 @dataclass
 class BuildingData:
@@ -34,8 +51,10 @@ class BuildingData:
     external_robot: str = ""
     # TODO: Implpement a list of robots
 
+
 @dataclass
 class DeliveryAPIServerData:
     server_ip: str = "0.0.0.0"
     port_num: int = 7171
-    ws_port_num: int = 7777
+    ws_port_num: int = 7878
+
