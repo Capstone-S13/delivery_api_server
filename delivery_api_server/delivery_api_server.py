@@ -22,7 +22,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit, disconnect
 import asyncio
 
-from delivery_api_server.info import BuildingData, DeliveryAPIServerData, SystemServerData, Operation, SystemOrderStatus
+from delivery_api_server.info import BuildingData, DeliveryAPIServerData, SystemServerData, SystemTaskStatus
 from delivery_api_server.delivery_dispatcher_client import DeliveryDispatcherClient
 from delivery_api_server.rmf_msg_observer import AsyncRmfMsgObserver, RmfMsgType
 
@@ -96,8 +96,19 @@ class DeliveryApiServer():
         @self.app.route('/receive-robot', methods=['POST'])
         def receive_robot():
             print("receive robot request")
-            receive_status = self.dispatcher_client.receive_robot(request.json)
+            msg, err_msg = self.dispatcher_client.receive_robot(request.json)
+            if msg == "":
+                return self.app.response_class(status = HTTPStatus.BAD_REQUEST.value)
+            return self.app.response_class(status=HTTPStatus.OK.value)
+
             # command rmf fleet adapter to accept robot into fleet and dispatch a task
+        @self.app.route('/eject-robot', methods=['POST'])
+        def eject_robot():
+            print("receive eject robot")
+            msg, err_msg = self.dispatcher_client.eject_robot(request.json)
+            if msg == "":
+                return self.app.response_class(status = HTTPStatus.BAD_REQUEST.value)
+            return self.app.response_class(status=HTTPStatus.OK.value)
 
 
         @self.app.route('/submit_task', methods=['POST'])
@@ -180,8 +191,7 @@ class DeliveryApiServer():
             time.sleep(2)
 
     def fleet_filter(self, json_data):
-        if (json_data["assigned_to"]["group"] != BuildingData.internal_fleet_name
-            or  json_data["assigned_to"]["name"] != BuildingData.internal_robot):
+        if (json_data["assigned_to"]["group"] != BuildingData.internal_fleet_name):
             self.dispatcher_client.get_logger().info("not our robot!")
             return None
         return json_data
@@ -196,46 +206,54 @@ class DeliveryApiServer():
     def post_order_status(self):
         url = f"http://{SystemServerData.server_ip}:{SystemServerData.port_num}/{SystemServerData.order_status_route}"
         for robot in self.order_map:
-            order = {}
-            order["orderId"] = self.order_map[robot]["id"]
+            task_status = {}
+            task_status["robot"] = {"id": robot}
+            task_status["task_id"] = self.order_map[robot]["id"]
             if self.order_map[robot]["status"] == "underway":
-                order["status"] = SystemOrderStatus.ROBOT_DISPATCHED.value
+                task_status["status"] = SystemTaskStatus.TASK_UNDERWAY.value
             elif self.order_map[robot]["status"] == "completed":
-                order["status"] = SystemOrderStatus.AT_STORE_HUB.value
-            self.dispatcher_client.get_logger().info(f"posting order status {order}")
-            requests.post(url=url, json=order)
+                task_status["status"] = SystemTaskStatus.TASK_COMPLETED.value
+            self.dispatcher_client.get_logger().info(f"posting order status {task_status}")
+            resp = requests.post(url=url, json=task_status)
 
     def msg_callback(self,msg_type, data):
         self.dispatcher_client.set_task_state(data)
         data["phases"] = {}
         data = self.fleet_filter(data)
-        self.dispatcher_client.get_logger().info("rec data")
         # self.dispatcher_client.get_logger()\
         #     .info(f" \nReceived [{msg_type}] :: Data: \n   "
         #     f"{data}")
         robot = data["assigned_to"]["name"]
         if robot not in self.order_map:
-            self.dispatcher_client.get_logger().info("adding robot to order map")
-            order_status = {}
-            order_status["id"] = data["booking"]["id"]
-            order_status["status"] = data["status"]
+            self.dispatcher_client.get_logger().info(f"adding robot: {robot} to order map")
+            task_status = {}
+            task_status["id"] = data["booking"]["id"]
+            task_status["status"] = data["status"]
+
             # self.order_map_semaphore.acquire()
-            self.order_map[robot] = order_status
+            self.order_map[robot] = task_status
             # self.order_map_semaphore.release()
-        else:
-            # update status
-            self.dispatcher_client.get_logger().info("updating order map status")
-            if data["booking"]["id"] == self.order_map[robot]["id"]:
-                # self.order_map_semaphore.acquire()
-                self.order_map[robot]["status"] = data["status"]
-                # self.order_map_semaphore.release
-            else:
-                # self.order_map_semaphore.acquire()
-                self.order_map[robot]["id"] = data["booking"]["id"]
-                self.order_map[robot]["status"] = data["status"]
-                # self.order_map_semaphore.release()
-        self.dispatcher_client.get_logger().info("updating order status")
-        self.post_order_status()
+            self.post_order_status()
+            return
+        # update status
+        # self.dispatcher_client.get_logger().info("updating order map status")
+        if (data["booking"]["id"] == self.order_map[robot]["id"] and
+            self.order_map[robot]["status"] != data["status"]):
+            # self.order_map_semaphore.acquire()
+            self.order_map[robot]["status"] = data["status"]
+            self.post_order_status()
+            return
+            # self.order_map_semaphore.release
+
+        if (data["booking"]["id"] != self.order_map[robot]["id"] and
+            self.order_map[robot]["status"] != data["status"]):
+            # self.order_map_semaphore.acquire()
+            self.order_map[robot]["id"] = data["booking"]["id"]
+            self.order_map[robot]["status"] = data["status"]
+            # self.order_map_semaphore.release()
+            self.post_order_status()
+            return
+
 
     def rmf_listener_spin(self):
         print("creating observer")
@@ -272,7 +290,9 @@ def main(args=None):
     delivery_api_server = DeliveryApiServer(server_ip, port_num, ws_port_num)
     delivery_api_server.web_server_thread.start()
     delivery_api_server.broadcast_thread.start()
-    print("starting rmf listener")
+    print("starting rmf listener")            if msg == "":
+                return self.app.response_class(status = HTTPStatus.BAD_REQUEST.value)
+            return self.app.response_class(status=HTTPStatus.OK.value)
     done_fut = asyncio.Future()
     delivery_api_server.make_listener_thread(done_fut)
     delivery_api_server.listener_thread.start()

@@ -2,7 +2,7 @@
 from flask import Flask, request
 from flask_socketio import SocketIO
 import requests
-from delivery_api_server.info import SystemServerData
+from delivery_api_server.info import SystemServerData, SystemTaskStatus
 from http import HTTPStatus
 
 
@@ -23,17 +23,24 @@ status_dic = {
     8 : "FAILED"
     }
 
+task_status_dic = {
+    0 : "TASK_UNDERWAY",
+    1 : "TASK_COMPLETED",
+    2 : "TASK_FAILED"
+}
+
 @app.route(f'/{SystemServerData.order_status_route}', methods=['POST'])
 def handle_order_status():
     print("received order")
     try:
-        print(f"orderId: {request.json['orderId']}")
+        print(f"task id: {request.json['task_id']}")
+        print(f"robot: {request.json['robot']['id']}")
         print(f"status: {status_dic[request.json['status']]}")
         return app.response_class(status=HTTPStatus.OK.value)
     except:
         print("json not in specified format")
         return app.response_class(status=HTTPStatus.BAD_REQUEST)
-    return
+
 
 
 

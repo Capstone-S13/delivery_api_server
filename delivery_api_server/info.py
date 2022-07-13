@@ -23,10 +23,15 @@ class SystemOrderStatus(Enum):
     CANCELLED = 8
     FAILED = 9
 
+class SystemTaskStatus(Enum):
+    TASK_UNDERWAY = 0
+    TASK_COMPLETED = 1
+    TASK_FAILED = 2
+
 
 class Operation(Enum):
-    HUB_COLLECT = 0
-    HUB_DEPOSIT = 1
+    HUB_DEPOSIT = 0
+    HUB_COLLECT = 1
 
 
 @dataclass
@@ -46,7 +51,7 @@ class BuildingData:
     hub: str = "coe"
     holding_point: str ="lounge"
     internal_fleet_name: str = "Unodopo"
-    external_fleet_name: str = "Unodopo"
+    external_fleet_name: str = "External"
     internal_robot: str = "Unodopo1"
     external_robot: str = ""
     # TODO: Implpement a list of robots

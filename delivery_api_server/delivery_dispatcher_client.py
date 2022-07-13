@@ -147,13 +147,13 @@ class DeliveryDispatcherClient(Node):
         self.get_logger().info("message converted")
         # submit a delivery order request
         msg = ApiRequest()
-        msg.request_id = req_json["order"]["company_name"] + "_hub_delivery_" + str(uuid.uuid4())
+        msg.request_id = req_json["task_id"]
         payload = {}
         # TODO: set payload["type"] tp ne "dispatch_task_request" if there is
         # more than one robot
-        payload["type"] = "robot_task_request"
+        payload["type"] = "dispatch_task_request"
         payload["fleet"] = BuildingData.internal_fleet_name
-        payload["robot"] = BuildingData.internal_robot
+        # payload["robot"] = BuildingData.internal_robot
         payload["request"] = request_json
         msg.json_msg = json.dumps(payload)
         self.task_api_req_pub.publish(msg)
@@ -166,9 +166,12 @@ class DeliveryDispatcherClient(Node):
         request_json, err_msg = self.__convert_receive_robot_request(req_json)
         if request_json is None:
                 return "", err_msg
+
         msg = ApiRequest()
-        msg.request_id = req_json["order"]["company_name"] + "_hub_delivery_" + str(uuid.uuid4())
+        msg.request_id = req_json["task_id"]
         payload = {}
+        # This has to be a robot task request
+        # We need that particular robot to collect
         payload["type"] = "robot_task_request"
         payload["fleet"] = BuildingData.external_fleet_name
         # TODO: Check if building name is equal
@@ -190,6 +193,10 @@ class DeliveryDispatcherClient(Node):
         # This API Server will be responding to the service request
         # Notifies the System server once the it receives the ROS Service
         # call.
+
+    def eject_robot(self, req_json):
+        request_json, err_msg = self.__convert_eject_robot_request(req_json)
+        return
 
 
 # Getters
@@ -481,6 +488,34 @@ class DeliveryDispatcherClient(Node):
                 "description":{"activities":activities}}})
             request["description"] = description
             return request
+
+    def __convert_eject_robot_request(self, eject_robot_json):
+        request = {}
+        start_time = 0
+        now = self.get_clock().now().to_msg()
+        now.sec =  now.sec + start_time
+        start_time = now.sec * 1000 + round(now.nanosec/10**6)
+        request["unix_millis_earliest_start_time"] = start_time
+        request["category"] = "compose"
+        description = {} # task_description_Compose.json
+        description["phases"] = []
+        activities = []
+        egress_point = eject_robot_json["egress_point"]
+        activities.append({"category": "go_to_place",  "description": egress_point})
+
+        eject_activity = {"category": "perform_action",  "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "hub_collect",
+                    "description": {
+                        "new_host": eject_robot_json["new_host"]}
+                                    }
+                        }
+        activities.append(eject_activity)
+
+        description["phases"].append({"activity":{"category": "sequence",
+                "description":{"activities":activities}}})
+        request["description"] = description
+        return request
 
     def __convert_task_description(self, task_json):
         """

@@ -1,13 +1,15 @@
+from webbrowser import Opera
 import requests
 import uuid
 import json
 from http import HTTPStatus
 
-from delivery_api_server.info import DeliveryAPIServerData
+from delivery_api_server.info import DeliveryAPIServerData, Operation
 
 
 def test_post():
     hub_collect_json = {
+                        "task_id" : str(uuid.uuid4()),
                         "order":
                             {
                                 "company_name": "barg",
@@ -23,7 +25,7 @@ def test_post():
 
                         "operation":
                             {
-                                "task": 1
+                                "task": Operation.HUB_DEPOSIT.value
                             }
                         }
 
