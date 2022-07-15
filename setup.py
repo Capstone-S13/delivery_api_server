@@ -33,7 +33,9 @@ setup(
             'dispatch_external_hub_collect=delivery_api_server.dispatch_external_hub_collect:main',
             'dispatch_external_hub_deposit=delivery_api_server.dispatch_external_hub_deposit:main',
             'post_order_test=delivery_api_server.post_order_test:test_post',
-            'minimal_app=delivery_api_server.minimal_app:main'
+            'post_receive_robot=delivery_api_server.post_receive_robot_collect:main',
+            'minimal_app=delivery_api_server.minimal_app:main',
+            "post_direct_deposit=delivery_api_server.post_receive_robot_direct_deposit:main"
         ],
     },
 )

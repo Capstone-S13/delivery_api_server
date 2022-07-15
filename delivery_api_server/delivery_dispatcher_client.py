@@ -174,12 +174,11 @@ class DeliveryDispatcherClient(Node):
         # We need that particular robot to collect
         payload["type"] = "robot_task_request"
         payload["fleet"] = BuildingData.external_fleet_name
+        payload["robot"] = req_json["robot"]["id"]
         # TODO: Check if building name is equal
-        ingress_wp = req_json['ingress_point']['waypoint']
+        ingress_wp = req_json['ingress_point']['unit']
         # TODO: accept robot into fleet
 
-        payload["robot"] = req_json["robot"]["id"]
-        payload["type"] = "dispatch_task_request"
         payload["request"] = request_json
         msg.json_msg = json.dumps(payload)
         self.task_api_req_pub.publish(msg)
@@ -447,7 +446,6 @@ class DeliveryDispatcherClient(Node):
         if (("robot" not in receive_robot_json) or
             ("ingress_point" not in  receive_robot_json) or
             ("egress_point" not in receive_robot_json) or
-            ("unit" not in receive_robot_json) or
             ("order" not in receive_robot_json) or
             ("operation" not in receive_robot_json)):
             raise Exception("Key value is incomplete")
@@ -463,9 +461,9 @@ class DeliveryDispatcherClient(Node):
             description["category"] = "hub_delivery"
             description["phases"] = []
             activities = []
-            activities.append({"category": "go_to_place",  "description": BuildingData.hub})
 
             if (receive_robot_json["operation"]["task"] == Operation.HUB_COLLECT.value):
+                activities.append({"category": "go_to_place",  "description": BuildingData.hub})
                 hub_activity = {"category": "perform_action",  "description": {
                     "unix_millis_action_duration_estimate": 60000,
                     "category": "hub_collect",
@@ -475,6 +473,7 @@ class DeliveryDispatcherClient(Node):
 
 
             elif (receive_robot_json["operation"]["task"] == Operation.HUB_DEPOSIT.value):
+                activities.append({"category": "go_to_place",  "description": BuildingData.hub})
                 hub_activity = {"category": "perform_action",  "description": {
                     "unix_millis_action_duration_estimate": 60000,
                     "category": "hub_deposit",
@@ -482,12 +481,32 @@ class DeliveryDispatcherClient(Node):
                                     "company":receive_robot_json["order"]["company_name"]}}}
                 activities.append(hub_activity)
 
+            elif (receive_robot_json["operation"]["task"] == Operation.DIRECT_COLLECT.value):
+                destination = receive_robot_json["destination"]["unit"]
+                activities.append({"category": "go_to_place",  "description": destination})
+                collect_activity = {"category": "perform_action",  "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "unit_collect",
+                    "description": {"id": receive_robot_json["order"]["id"],
+                                    "company":receive_robot_json["order"]["company_name"]}}}
+                activities.append(collect_activity)
+
+            elif (receive_robot_json["operation"]["task"] == Operation.DIRECT_DEPOSIT.value):
+                destination = receive_robot_json["destination"]["unit"]
+                activities.append({"category": "go_to_place",  "description": destination})
+                deposit_activity = {"category": "perform_action",  "description": {
+                    "unix_millis_action_duration_estimate": 60000,
+                    "category": "unit_deposit",
+                    "description": {"id": receive_robot_json["order"]["id"],
+                                    "company":receive_robot_json["order"]["company_name"]}}}
+                activities.append(deposit_activity)
+
             activities.append({"category": "go_to_place",
                 "description": receive_robot_json["egress_point"]["unit"]})
             description["phases"].append({"activity":{"category": "sequence",
                 "description":{"activities":activities}}})
             request["description"] = description
-            return request
+            return request, ""
 
     def __convert_eject_robot_request(self, eject_robot_json):
         request = {}

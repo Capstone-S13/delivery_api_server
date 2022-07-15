@@ -9,7 +9,7 @@ from delivery_api_server.info import DeliveryAPIServerData, Operation
 
 def test_post():
     hub_collect_json = {
-                        "task_id" : str(uuid.uuid4()),
+                        "task_id" : f'barg_{str(uuid.uuid4())}',
                         "order":
                             {
                                 "company_name": "barg",

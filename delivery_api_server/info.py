@@ -32,6 +32,9 @@ class SystemTaskStatus(Enum):
 class Operation(Enum):
     HUB_DEPOSIT = 0
     HUB_COLLECT = 1
+    DIRECT_DEPOSIT = 2
+    DIRECT_COLLECT = 3
+    GO_TO_PLACE = 4
 
 
 @dataclass
@@ -41,6 +44,7 @@ class SystemServerData:
 
     # routings
     order_status_route: str = "order-status"
+    task_status_route: str = "task-status"
 
 @dataclass
 class BuildingData:
@@ -51,7 +55,7 @@ class BuildingData:
     hub: str = "coe"
     holding_point: str ="lounge"
     internal_fleet_name: str = "Unodopo"
-    external_fleet_name: str = "External"
+    external_fleet_name: str = "ExternalDopo"
     internal_robot: str = "Unodopo1"
     external_robot: str = ""
     # TODO: Implpement a list of robots

@@ -191,8 +191,9 @@ class DeliveryApiServer():
             time.sleep(2)
 
     def fleet_filter(self, json_data):
-        if (json_data["assigned_to"]["group"] != BuildingData.internal_fleet_name):
-            self.dispatcher_client.get_logger().info("not our robot!")
+        if (json_data["assigned_to"]["group"] != BuildingData.internal_fleet_name
+            and json_data["assigned_to"]["group"] != BuildingData.external_fleet_name):
+            # self.dispatcher_client.get_logger().info("not our robot!")
             return None
         return json_data
 
@@ -220,9 +221,9 @@ class DeliveryApiServer():
         self.dispatcher_client.set_task_state(data)
         data["phases"] = {}
         data = self.fleet_filter(data)
-        # self.dispatcher_client.get_logger()\
-        #     .info(f" \nReceived [{msg_type}] :: Data: \n   "
-        #     f"{data}")
+        self.dispatcher_client.get_logger()\
+            .info(f" \nReceived [{msg_type}] :: Data: \n   "
+            f"{data}")
         robot = data["assigned_to"]["name"]
         if robot not in self.order_map:
             self.dispatcher_client.get_logger().info(f"adding robot: {robot} to order map")
@@ -290,9 +291,7 @@ def main(args=None):
     delivery_api_server = DeliveryApiServer(server_ip, port_num, ws_port_num)
     delivery_api_server.web_server_thread.start()
     delivery_api_server.broadcast_thread.start()
-    print("starting rmf listener")            if msg == "":
-                return self.app.response_class(status = HTTPStatus.BAD_REQUEST.value)
-            return self.app.response_class(status=HTTPStatus.OK.value)
+    print("starting rmf listener")
     done_fut = asyncio.Future()
     delivery_api_server.make_listener_thread(done_fut)
     delivery_api_server.listener_thread.start()
