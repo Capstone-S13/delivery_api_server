@@ -32,9 +32,11 @@ class SystemTaskStatus(Enum):
 class Operation(Enum):
     HUB_DEPOSIT = 0
     HUB_COLLECT = 1
-    DIRECT_DEPOSIT = 2
-    DIRECT_COLLECT = 3
-    GO_TO_PLACE = 4
+    GO_TO_PLACE = 2
+
+class FleetType(Enum):
+    INTERNAL = 0
+    EXTERNAL = 1
 
 
 @dataclass

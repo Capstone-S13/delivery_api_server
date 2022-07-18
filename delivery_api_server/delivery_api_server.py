@@ -5,6 +5,7 @@ The main API Interfaces (default port 8083):
 2) socketIO broadcast states: /task_status, /robot_states, /ros_time
 """
 
+from crypt import methods
 import sys
 import os
 from turtle import done
@@ -22,7 +23,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit, disconnect
 import asyncio
 
-from delivery_api_server.info import BuildingData, DeliveryAPIServerData, SystemServerData, SystemTaskStatus
+from delivery_api_server.info import BuildingData, DeliveryAPIServerData, FleetType, SystemServerData, SystemTaskStatus
 from delivery_api_server.delivery_dispatcher_client import DeliveryDispatcherClient
 from delivery_api_server.rmf_msg_observer import AsyncRmfMsgObserver, RmfMsgType
 
@@ -92,6 +93,21 @@ class DeliveryApiServer():
                 order = request.args.get('order')
                 print(f"order is {order}")
                 # get status or order
+
+        @self.app.route('/internal-task', methods=['POST'])
+        def handle_internal_task():
+            print("received internal task")
+            msg, err_msg = self.dispatcher_client.dispatch_task(
+                request.json, FleetType.INTERNAL.value)
+
+        @self.app.route('/external-task', methods=['POST'])
+        def handle_external_task():
+            print('received external task')
+            success = self.dispatcher_client.dispatch_task(
+                request.json, FleetType.EXTERNAL.value)
+            if not success:
+                return self.app.response_class(status =HTTPStatus.BAD_REQUEST.value)
+            return self.app.response_class(status=HTTPStatus.OK.value)
 
         @self.app.route('/receive-robot', methods=['POST'])
         def receive_robot():

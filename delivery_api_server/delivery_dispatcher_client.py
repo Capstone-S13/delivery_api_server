@@ -1,10 +1,13 @@
+from lib2to3.pgen2.grammar import opmap_raw
 from logging import raiseExceptions
+from unicodedata import category
 
 from flask import request, request_started
 import rclpy
 import time
 import json
 import uuid
+import math
 from typing import Tuple
 
 from rclpy.node import Node
@@ -23,7 +26,7 @@ from rmf_building_map_msgs.srv import GetBuildingMap
 from rmf_fleet_msgs.msg import FleetState, RobotMode
 
 # Info for delivery
-from delivery_api_server.info import BuildingData, Operation
+from delivery_api_server.info import BuildingData, Operation, FleetType
 
 # This was derived from: https://github.com/open-rmf/rmf_demos/blob/main/rmf_demos_panel/rmf_demos_panel/simple_api_server.py
 
@@ -134,6 +137,34 @@ class DeliveryDispatcherClient(Node):
         # TODO: check res from "/task_api_responses"
         #   cancellation is not fully tested in "rmf_ros2"
         return False
+
+    def dispatch_task(self, req_json, fleet_type) -> bool:
+        self.get_logger().info("dispatching task")
+        request_json, err_msg = self.__convert_task_request(req_json)
+        if request is None:
+            return False
+        msg = ApiRequest()
+        msg.request_id = req_json['task_id']
+
+        payload = {}
+        payload['type'] = 'robot_task_request'
+        if fleet_type == FleetType.INTERNAL.value:
+            payload['fleet'] = BuildingData.internal_fleet_name
+            payload['robot'] = BuildingData.internal_robot
+        elif fleet_type == FleetType.EXTERNAL.value:
+            payload['fleet'] = BuildingData.external_fleet_name
+            payload['robot'] = req_json['robot']['id']
+        else:
+            self.get_logger().info('Does not match any type of fleet!')
+            return False
+        payload['request'] = request_json
+        msg.json_msg = json.dumps(payload)
+
+        self.task_api_req_pub.publish(msg)
+        self.get_logger().info('published task')
+        return True
+
+
 
     # dispatch a delivery order request to internal robot
     def dispatch_order(self, req_json) -> Tuple[str, str]:
@@ -358,6 +389,40 @@ class DeliveryDispatcherClient(Node):
             state["assignments"] = self.__get_robot_assignment(bot.name)
             bots.append(state)
         return bots
+
+    def __convert_task_request(self, task_json):
+        self.get_logger().info("attempting to convert task request")
+        operation = task_json['operation']['task']
+        request = self.__get_compose_task()
+        if operation == Operation.GO_TO_PLACE.value:
+            activity = self.__get_got_to_activity(task_json['destination']['unit'])
+            description = {}
+            description['category'] = 'go_to_place'
+            description['phases'] = [{'activity':activity}]
+            request['description'] = description
+            return request, ''
+
+        order = task_json['order']
+        go_to_hub_activity = self.__get_got_to_activity(BuildingData.hub)
+        hub_activity, err_msg = self.__get_hub_activity(order, operation)
+        if hub_activity is None:
+            return None, err_msg
+        description = {}
+        description['phases'] = []
+        activities = [go_to_hub_activity, hub_activity]
+        description['phases'].append(
+            {
+                "activity":{
+                    "category": "sequence",
+                    "description":{"activities":activities}
+                }
+            }
+        )
+        request['description'] = description
+        return request, ''
+
+
+
 
     ## convert delivery order request into a task request
     def __convert_delivery_order_request(self, order_json):
@@ -597,6 +662,53 @@ class DeliveryDispatcherClient(Node):
             return None, str(ex)
         print("return", request)
         return request, ""
+
+    def __get_compose_task(self, delay=0):
+        request = {}
+        start_time_sec = 0
+        now = self.get_clock().now().to_msg()
+        now.sec =  now.sec + start_time_sec + delay
+        start_time = now.sec * 1000 + round(now.nanosec/10**6)
+        request["unix_millis_earliest_start_time"] = start_time
+        request["category"] = "compose"
+        return request
+
+    def __get_got_to_activity(self, place, orientation=None):
+        description = {'waypoint': place}
+        if orientation is not None:
+            description['orientation'] = math.pi/180
+        activity = {
+            'category': 'go_to_place',
+            'description': description
+        }
+        return activity
+
+    def __get_hub_activity(self, order, operation):
+        category = ""
+        if operation == Operation.HUB_COLLECT.value:
+            category = 'hub_collect'
+        elif operation == Operation.HUB_DEPOSIT.value:
+            category = 'hub_deposit'
+        else:
+            err_msg = 'unknown_operation'
+            self.get_logger().info(err_msg)
+            return None, err_msg
+        hub_activity = {
+            'category': 'perform_action',
+            'description': {
+                'unix_millis_action_duration_estimate': 60000,
+                'category': category,
+                'description': {"id":order['id'],
+                    'company_name': order['company_name'],
+                    "description":
+                        "" if ('description' not in order)
+                        else order['description']
+                }
+            }
+        }
+
+        return hub_activity, ''
+
 
     def __convert_building_map_msg(self, msg):
         map_data = {}

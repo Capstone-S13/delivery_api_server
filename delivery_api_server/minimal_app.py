@@ -35,7 +35,7 @@ def handle_order_status():
     try:
         print(f"task id: {request.json['task_id']}")
         print(f"robot: {request.json['robot']['id']}")
-        print(f"status: {status_dic[request.json['status']]}")
+        print(f"status: {task_status_dic[request.json['status']]}")
         return app.response_class(status=HTTPStatus.OK.value)
     except:
         print("json not in specified format")
